@@ -14,7 +14,7 @@ Getting Started
 1. Download the latest release of YCSB:
 
     ```sh
-    wget https://github.com/downloads/brianfrankcooper/YCSB/ycsb-0.1.4.tar.gz
+    curl -O https://github.com/brianfrankcooper/YCSB/releases/download/0.1.4/ycsb-0.1.4.tar.gz
     tar xfvz ycsb-0.1.4.tar.gz
     cd ycsb-0.1.4
     ```
@@ -36,3 +36,14 @@ Getting Started
 
   See https://github.com/brianfrankcooper/YCSB/wiki/Core-Properties for 
   the list of available workload properties.
+
+Building from source
+--------------------
+
+To build the full distribution, with all database bindings:
+
+    mvn clean package
+
+To build a single database binding:
+
+    mvn -pl com.yahoo.ycsb:mongodb-binding -am clean package

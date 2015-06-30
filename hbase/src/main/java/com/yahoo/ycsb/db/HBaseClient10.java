@@ -27,6 +27,7 @@ import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hbase.Cell;
 import org.apache.hadoop.hbase.CellUtil;
 import org.apache.hadoop.hbase.HBaseConfiguration;
+import org.apache.hadoop.hbase.HTableDescriptor;
 import org.apache.hadoop.hbase.KeyValue;
 import org.apache.hadoop.hbase.TableName;
 import org.apache.hadoop.hbase.client.BufferedMutator;
@@ -36,6 +37,7 @@ import org.apache.hadoop.hbase.client.ConnectionFactory;
 import org.apache.hadoop.hbase.client.Delete;
 import org.apache.hadoop.hbase.client.Durability;
 import org.apache.hadoop.hbase.client.Get;
+import org.apache.hadoop.hbase.client.HTable;
 import org.apache.hadoop.hbase.client.Put;
 import org.apache.hadoop.hbase.client.Result;
 import org.apache.hadoop.hbase.client.ResultScanner;
@@ -88,7 +90,8 @@ public class HBaseClient10 extends com.yahoo.ycsb.DB
      * This is the default behavior for HBaseClient. For measuring
      * insert/update/delete latencies, client side buffering should be disabled.
      */
-    public boolean _clientSideBuffering = true;
+    public boolean _clientSideBuffering = false;
+    public long _writeBufferSize = 1024 * 1024 * 12;
 
     public static final int Ok=0;
     public static final int ServerError=-1;
@@ -102,8 +105,11 @@ public class HBaseClient10 extends com.yahoo.ycsb.DB
     @Override
     public void init() throws DBException
     {
-        if ("false".equals(getProperties().getProperty("clientbuffering", "true"))) {
-            this._clientSideBuffering = false;
+        if ("true".equals(getProperties().getProperty("clientbuffering", "false"))) {
+            this._clientSideBuffering = true;
+        }
+        if (getProperties().containsKey("writebuffersize")) {
+            _writeBufferSize = Long.parseLong(getProperties().getProperty("writebuffersize"));
         }
 
         if (getProperties().getProperty("durability") != null) {
@@ -129,6 +135,20 @@ public class HBaseClient10 extends com.yahoo.ycsb.DB
             throw new DBException("No columnfamily specified");
         }
         _columnFamilyBytes = Bytes.toBytes(_columnFamily);
+
+      // Terminate right now if table does not exist, since the client
+      // will not propagate this error upstream once the workload
+      // starts.
+      String table = com.yahoo.ycsb.workloads.CoreWorkload.table;
+      try
+	  {
+	      final TableName tableName = TableName.valueOf(table);
+	      HTableDescriptor dsc = _connection.getTable(tableName).getTableDescriptor();
+	  }
+      catch (IOException e)
+	  {
+	      throw new DBException(e);
+	  }
     }
 
     /**
@@ -166,7 +186,7 @@ public class HBaseClient10 extends com.yahoo.ycsb.DB
         //suggestions from http://ryantwopointoh.blogspot.com/2009/01/performance-of-hbase-importing.html
         if (_clientSideBuffering) {
             final BufferedMutatorParams p = new BufferedMutatorParams(tableName);
-            p.writeBufferSize(1024*1024*12);
+            p.writeBufferSize(_writeBufferSize);
             this._bufferedMutator = this._connection.getBufferedMutator(p);
         }
     }
@@ -372,11 +392,12 @@ public class HBaseClient10 extends com.yahoo.ycsb.DB
         p.setDurability(_durability);
         for (Map.Entry<String, ByteIterator> entry : values.entrySet())
         {
+            byte[] value = entry.getValue().toArray();
             if (_debug) {
                 System.out.println("Adding field/value " + entry.getKey() + "/"+
-                        entry.getValue() + " to put request");
+                        Bytes.toStringBinary(value) + " to put request");
             }
-            p.add(_columnFamilyBytes,Bytes.toBytes(entry.getKey()),entry.getValue().toArray());
+            p.add(_columnFamilyBytes,Bytes.toBytes(entry.getKey()), value);
         }
 
         try
